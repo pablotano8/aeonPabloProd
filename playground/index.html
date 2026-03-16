@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brain Tumor Segmentation Playground</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #242836;
+      --border: #2e3345;
+      --text: #e1e4ed;
+      --text-dim: #8b90a0;
+      --accent: #4f8ff7;
+      --accent-hover: #6ba1ff;
+      --danger: #f74f4f;
+      --success: #4fcf7f;
+      --warning: #f7a94f;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .layout {
+      display: flex;
+      height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 320px;
+      min-width: 320px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .sidebar-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .sidebar-header p {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .section {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    /* Upload area */
+    .upload-area {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .upload-area:hover {
+      border-color: var(--accent);
+      background: rgba(79, 143, 247, 0.05);
+    }
+
+    .upload-area.dragover {
+      border-color: var(--accent);
+      background: rgba(79, 143, 247, 0.1);
+    }
+
+    .upload-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .upload-area p {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .upload-area .formats {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 4px;
+      opacity: 0.7;
+    }
+
+    input[type="file"] { display: none; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+      width: 100%;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* Toggle switches */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+
+    .toggle-label {
+      font-size: 13px;
+    }
+
+    .toggle-sublabel {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 2px;
+      top: 2px;
+      background: var(--text-dim);
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+
+    .toggle input:checked + .toggle-slider {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .toggle input:checked + .toggle-slider::before {
+      transform: translateX(18px);
+      background: white;
+    }
+
+    /* Slider */
+    .slider-row {
+      padding: 6px 0;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+
+    .slider-value {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: var(--surface2);
+      border-radius: 2px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      background: var(--accent);
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    /* Status */
+    .status-bar {
+      padding: 12px 20px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.idle { background: var(--text-dim); }
+    .status-dot.running { background: var(--warning); animation: pulse 1.5s infinite; }
+    .status-dot.done { background: var(--success); }
+    .status-dot.error { background: var(--danger); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Stats panel */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat-card {
+      background: var(--surface2);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      margin-bottom: 2px;
+    }
+
+    .stat-value {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    /* Viewer */
+    .viewer {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: black;
+      position: relative;
+    }
+
+    .viewer-toolbar {
+      display: flex;
+      gap: 4px;
+      padding: 8px 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .view-btn {
+      padding: 5px 12px;
+      font-size: 12px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .view-btn:hover { border-color: var(--accent); color: var(--text); }
+    .view-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .canvas-container {
+      flex: 1;
+      position: relative;
+    }
+
+    #gl {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+    }
+
+    .placeholder-icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+      opacity: 0.3;
+    }
+
+    .placeholder p {
+      font-size: 14px;
+    }
+
+    /* Loading overlay */
+    .loading-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 17, 23, 0.85);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .loading-overlay.visible {
+      display: flex;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--surface2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+
+    /* Sensitivity badge */
+    .sensitivity-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .sensitivity-badge.normal {
+      background: rgba(79, 143, 247, 0.15);
+      color: var(--accent);
+    }
+
+    .sensitivity-badge.high {
+      background: rgba(247, 169, 79, 0.15);
+      color: var(--warning);
+    }
+
+    /* Clinical inputs */
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .input-row label {
+      font-size: 13px;
+      min-width: 40px;
+    }
+
+    .input-row input, .input-row select {
+      flex: 1;
+      padding: 6px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+    }
+
+    .input-row input:focus, .input-row select:focus {
+      border-color: var(--accent);
+    }
+
+    .input-row select option {
+      background: var(--surface2);
+    }
+
+    /* Survival results */
+    .survival-card {
+      background: var(--surface2);
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 8px;
+    }
+
+    .survival-median {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1.2;
+    }
+
+    .survival-median-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+    }
+
+    .survival-range {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 6px;
+    }
+
+    .risk-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 6px;
+    }
+
+    .risk-badge.high-risk {
+      background: rgba(247, 79, 79, 0.15);
+      color: var(--danger);
+    }
+
+    .risk-badge.medium-risk {
+      background: rgba(247, 169, 79, 0.15);
+      color: var(--warning);
+    }
+
+    .risk-badge.low-risk {
+      background: rgba(79, 207, 127, 0.15);
+      color: var(--success);
+    }
+
+    .survival-bar {
+      margin-top: 10px;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .survival-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--accent);
+    }
+
+    .survival-bar-range {
+      position: absolute;
+      height: 100%;
+      border-radius: 3px;
+      opacity: 0.3;
+      background: var(--accent);
+    }
+
+    .survival-note {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 8px;
+      line-height: 1.4;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h1>Brain Tumor Segmentation</h1>
+        <p>FLAIR MRI Analysis Playground</p>
+      </div>
+
+      <!-- Upload -->
+      <div class="section">
+        <div class="section-title">Input</div>
+        <div class="upload-area" id="uploadArea">
+          <span class="upload-icon">&#x1F9E0;</span>
+          <p>Drop FLAIR NIfTI file here</p>
+          <p class="formats">.nii or .nii.gz</p>
+        </div>
+        <input type="file" id="fileInput" accept=".nii,.nii.gz,.gz" />
+        <div style="margin-top: 12px;">
+          <div class="section-title" style="margin-top: 8px;">Clinical Info (for survival prediction)</div>
+          <div class="input-row">
+            <label for="ageInput">Age</label>
+            <input type="number" id="ageInput" placeholder="e.g. 55" min="0" max="120" step="1" />
+          </div>
+          <div class="input-row">
+            <label for="eorInput">EOR</label>
+            <select id="eorInput">
+              <option value="GTR">GTR (Gross Total Resection)</option>
+              <option value="STR">STR (Subtotal Resection)</option>
+              <option value="NA">Unknown</option>
+            </select>
+          </div>
+        </div>
+        <div style="margin-top: 12px;">
+          <button class="btn btn-primary" id="runBtn" disabled>Run Segmentation</button>
+        </div>
+      </div>
+
+      <!-- Overlay Controls -->
+      <div class="section" id="overlayControls" style="display:none;">
+        <div class="section-title">Overlays</div>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Segmentation</div>
+            <div class="toggle-sublabel">Tumor mask overlay</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="toggleSeg" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Uncertainty</div>
+            <div class="toggle-sublabel">Model confidence map (low = uncertain)</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="toggleUnc" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">High Sensitivity</div>
+            <div class="toggle-sublabel">Sensitivity 90.0% &rarr; 99.0% (Dice: 0.915 &rarr; 0.752)</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="toggleHighSens" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="slider-row" style="margin-top: 8px;">
+          <div class="slider-header">
+            <span>Overlay Opacity</span>
+            <span class="slider-value" id="opacityValue">50%</span>
+          </div>
+          <input type="range" id="opacitySlider" min="0" max="100" value="50" />
+        </div>
+
+        <div style="margin-top: 12px;">
+          <button class="btn btn-primary" id="updateImageBtn">Update Image</button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="section" id="statsSection" style="display:none;">
+        <div class="section-title">Results</div>
+        <div style="margin-bottom: 8px;">
+          <span>Mode: </span>
+          <span class="sensitivity-badge normal" id="modeBadge">Normal</span>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Tumor Volume</div>
+            <div class="stat-value" id="statVolume">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Tumor Voxels</div>
+            <div class="stat-value" id="statVoxels">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Max Probability</div>
+            <div class="stat-value" id="statMaxProb">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Mean Uncertainty</div>
+            <div class="stat-value" id="statUncertainty">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Survival Prediction -->
+      <div class="section" id="survivalSection" style="display:none;">
+        <div class="section-title">Survival Prediction</div>
+        <div class="survival-card">
+          <div class="survival-median-label">Estimated Median Survival</div>
+          <div class="survival-median" id="survMedian">--</div>
+          <div class="survival-range" id="survRange"></div>
+          <div>
+            <span class="risk-badge" id="survRiskBadge">--</span>
+          </div>
+          <div class="survival-bar">
+            <div class="survival-bar-range" id="survBarRange"></div>
+            <div class="survival-bar-fill" id="survBarFill"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); margin-top: 2px;">
+            <span>0</span>
+            <span>500 days</span>
+            <span>1000+</span>
+          </div>
+        </div>
+        <div class="survival-note">
+          Based on CoxPH model (C-index 0.657 on predicted segmentation).
+          Uses tumor radiomics + clinical features. For research purposes only.
+        </div>
+      </div>
+
+      <!-- Info -->
+      <div class="section" style="flex: 1;">
+        <div class="section-title">About</div>
+        <p style="font-size: 12px; color: var(--text-dim); line-height: 1.5;">
+          nnU-Net v2 trained on 236 FLAIR volumes.
+          Dice: 0.915, Sensitivity: 90.0%, Precision: 93.1%.
+        </p>
+      </div>
+
+      <!-- Status -->
+      <div class="status-bar">
+        <span class="status-dot idle" id="statusDot"></span>
+        <span id="statusText">Ready</span>
+      </div>
+    </div>
+
+    <!-- Viewer -->
+    <div class="viewer">
+      <div class="viewer-toolbar">
+        <button class="view-btn active" data-view="multiplanar">Multi</button>
+        <button class="view-btn" data-view="axial">Axial</button>
+        <button class="view-btn" data-view="coronal">Coronal</button>
+        <button class="view-btn" data-view="sagittal">Sagittal</button>
+        <button class="view-btn" data-view="render">3D</button>
+      </div>
+      <div class="canvas-container">
+        <canvas id="gl"></canvas>
+        <div class="placeholder" id="placeholder">
+          <div class="placeholder-icon">&#x1F4CB;</div>
+          <p>Upload a FLAIR NIfTI scan to begin</p>
+        </div>
+        <div class="loading-overlay" id="loadingOverlay">
+          <div class="spinner"></div>
+          <div class="loading-text" id="loadingText">Running inference...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { Niivue, SLICE_TYPE } from "./lib/niivue.js";
+
+    // State
+    let nv = null;
+    let uploadedFile = null;
+    let inferenceResult = null;
+
+    // DOM elements
+    const uploadArea = document.getElementById("uploadArea");
+    const fileInput = document.getElementById("fileInput");
+    const runBtn = document.getElementById("runBtn");
+    const overlayControls = document.getElementById("overlayControls");
+    const statsSection = document.getElementById("statsSection");
+    const placeholder = document.getElementById("placeholder");
+    const loadingOverlay = document.getElementById("loadingOverlay");
+    const loadingText = document.getElementById("loadingText");
+    const statusDot = document.getElementById("statusDot");
+    const statusText = document.getElementById("statusText");
+
+    // Slice type constants (fallback if SLICE_TYPE is undefined)
+    const ST = SLICE_TYPE || { MULTIPLANAR: 3, AXIAL: 0, CORONAL: 1, SAGITTAL: 2, RENDER: 4 };
+    const VIEWS = {
+      multiplanar: ST.MULTIPLANAR,
+      axial: ST.AXIAL,
+      coronal: ST.CORONAL,
+      sagittal: ST.SAGITTAL,
+      render: ST.RENDER,
+    };
+
+    // Initialize NiiVue with retry
+    async function initViewer() {
+      const canvas = document.getElementById("gl");
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          nv = new Niivue({
+            backColor: [0.05, 0.05, 0.08, 1],
+            show3Dcrosshair: true,
+          });
+          await nv.attachToCanvas(canvas);
+          console.log("NiiVue initialized (attempt " + (attempt + 1) + ")");
+          return;
+        } catch (err) {
+          console.warn("NiiVue init attempt " + (attempt + 1) + " failed:", err);
+          nv = null;
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+      console.error("NiiVue failed to initialize after 3 attempts");
+    }
+
+    await initViewer();
+
+    // View buttons
+    document.querySelectorAll(".view-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".view-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        const viewName = btn.dataset.view;
+        nv.setSliceType(VIEWS[viewName]);
+      });
+    });
+
+    // Upload handling
+    uploadArea.addEventListener("click", () => fileInput.click());
+
+    uploadArea.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      uploadArea.classList.add("dragover");
+    });
+
+    uploadArea.addEventListener("dragleave", () => {
+      uploadArea.classList.remove("dragover");
+    });
+
+    uploadArea.addEventListener("drop", (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove("dragover");
+      if (e.dataTransfer.files.length > 0) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput.addEventListener("change", (e) => {
+      if (e.target.files.length > 0) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    function handleFile(file) {
+      uploadedFile = file;
+      uploadArea.querySelector("p").textContent = file.name;
+      runBtn.disabled = false;
+      setStatus("idle", `Loaded: ${file.name}`);
+    }
+
+    // Run inference
+    runBtn.addEventListener("click", async () => {
+      if (!uploadedFile) return;
+
+      runBtn.disabled = true;
+      loadingOverlay.classList.add("visible");
+      loadingText.textContent = "Running inference...";
+      setStatus("running", "Running inference...");
+
+      try {
+        const formData = new FormData();
+        formData.append("file", uploadedFile);
+
+        const ageVal = document.getElementById("ageInput").value;
+        if (ageVal) formData.append("age", ageVal);
+        formData.append("eor", document.getElementById("eorInput").value);
+
+        const response = await fetch("/api/infer", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
+
+        inferenceResult = await response.json();
+        console.log("Inference result:", inferenceResult);
+
+        // Display results
+        loadingText.textContent = "Loading volumes...";
+        await loadResults();
+
+        setStatus("done", "Inference complete");
+        overlayControls.style.display = "";
+        statsSection.style.display = "";
+        placeholder.style.display = "none";
+        updateStats();
+        updateSurvival();
+      } catch (err) {
+        setStatus("error", `Error: ${err.message}`);
+        console.error(err);
+      } finally {
+        loadingOverlay.classList.remove("visible");
+        runBtn.disabled = false;
+      }
+    });
+
+    async function loadResults() {
+      const t = Date.now();
+
+      // All volumes in one loadVolumes call — first is the base, rest are overlays
+      const volumeList = [
+        { url: inferenceResult.files.input + "?t=" + t, colormap: "gray", opacity: 1 },
+        { url: inferenceResult.files.segmentation + "?t=" + t, colormap: "red", opacity: 0.5 },
+        { url: inferenceResult.files.segmentation_high_sens + "?t=" + t, colormap: "warm", opacity: 0 },
+        { url: inferenceResult.files.uncertainty + "?t=" + t, colormap: "hot", opacity: 0 },
+      ];
+
+      console.log("Loading volumes:", volumeList.map(v => v.url));
+      await nv.loadVolumes(volumeList);
+      console.log("Volumes loaded:", nv.volumes.length);
+      nv.setSliceType(VIEWS.multiplanar);
+    }
+
+    function updateStats() {
+      if (!inferenceResult || !inferenceResult.stats) return;
+      const s = inferenceResult.stats;
+      document.getElementById("statVolume").textContent =
+        s.tumor_volume_cm3 !== undefined ? s.tumor_volume_cm3.toFixed(1) + " cm\u00B3" : "\u2014";
+      document.getElementById("statVoxels").textContent =
+        s.tumor_voxels !== undefined ? s.tumor_voxels.toLocaleString() : "\u2014";
+      document.getElementById("statMaxProb").textContent =
+        s.max_tumor_prob !== undefined ? (s.max_tumor_prob * 100).toFixed(1) + "%" : "\u2014";
+      document.getElementById("statUncertainty").textContent =
+        s.mean_uncertainty !== undefined ? s.mean_uncertainty.toFixed(4) : "\u2014";
+    }
+
+    function updateSurvival() {
+      const section = document.getElementById("survivalSection");
+      if (!inferenceResult || !inferenceResult.survival) {
+        section.style.display = "none";
+        return;
+      }
+      section.style.display = "";
+      const s = inferenceResult.survival;
+
+      // Median survival
+      const days = Math.round(s.median_days);
+      const months = s.median_months;
+      document.getElementById("survMedian").textContent = `${days} days (${months.toFixed(1)} mo)`;
+
+      // Range (IQR)
+      const p25 = Math.round(s.p25_days);
+      const p75 = Math.round(s.p75_days);
+      document.getElementById("survRange").textContent = `Prediction interval: ${p25}\u2013${p75} days`;
+
+      // Risk badge
+      const badge = document.getElementById("survRiskBadge");
+      badge.textContent = s.risk_group;
+      if (s.risk_group === "High Risk") {
+        badge.className = "risk-badge high-risk";
+      } else if (s.risk_group === "Medium Risk") {
+        badge.className = "risk-badge medium-risk";
+      } else {
+        badge.className = "risk-badge low-risk";
+      }
+
+      // Survival bar (capped at 1000 days for visualization)
+      const maxDays = 1000;
+      const fillPct = Math.min(days / maxDays * 100, 100);
+      const rangePct1 = Math.min(p25 / maxDays * 100, 100);
+      const rangePct2 = Math.min(p75 / maxDays * 100, 100);
+      document.getElementById("survBarFill").style.width = fillPct + "%";
+      document.getElementById("survBarRange").style.left = rangePct1 + "%";
+      document.getElementById("survBarRange").style.width = (rangePct2 - rangePct1) + "%";
+    }
+
+    // Update opacity slider label on input
+    document.getElementById("opacitySlider").addEventListener("input", (e) => {
+      document.getElementById("opacityValue").textContent = e.target.value + "%";
+    });
+
+    // Update Image button: rebuild the volume list based on current toggle state
+    document.getElementById("updateImageBtn").addEventListener("click", async () => {
+      if (!inferenceResult) return;
+
+      const segChecked = document.getElementById("toggleSeg").checked;
+      const uncChecked = document.getElementById("toggleUnc").checked;
+      const highSens = document.getElementById("toggleHighSens").checked;
+      const opacity = parseInt(document.getElementById("opacitySlider").value) / 100;
+      const t = Date.now();
+
+      // Update mode badge
+      const badge = document.getElementById("modeBadge");
+      if (highSens) {
+        badge.textContent = "High Sensitivity";
+        badge.className = "sensitivity-badge high";
+      } else {
+        badge.textContent = "Normal";
+        badge.className = "sensitivity-badge normal";
+      }
+
+      // Build volume list: always start with base FLAIR
+      const volumeList = [
+        { url: inferenceResult.files.input + "?t=" + t, colormap: "gray", opacity: 1 },
+      ];
+
+      // Add segmentation overlay (normal or high sensitivity)
+      if (segChecked) {
+        const segUrl = highSens
+          ? inferenceResult.files.segmentation_high_sens
+          : inferenceResult.files.segmentation;
+        volumeList.push({ url: segUrl + "?t=" + t, colormap: "red", opacity: opacity });
+      }
+
+      // Add uncertainty overlay
+      if (uncChecked) {
+        volumeList.push({ url: inferenceResult.files.uncertainty + "?t=" + t, colormap: "hot", opacity: opacity });
+      }
+
+      console.log("Updating image with", volumeList.length, "volumes");
+      setStatus("running", "Updating overlays...");
+
+      try {
+        await nv.loadVolumes(volumeList);
+        nv.setSliceType(VIEWS.multiplanar);
+        setStatus("done", "Image updated");
+      } catch (err) {
+        console.error("Failed to update image:", err);
+        setStatus("error", "Failed to update overlays");
+      }
+    });
+
+    function setStatus(state, text) {
+      statusDot.className = "status-dot " + state;
+      statusText.textContent = text;
+    }
+  </script>
+</body>
+</html>

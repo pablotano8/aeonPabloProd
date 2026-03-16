@@ -1,0 +1,29 @@
+name: aeon
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+    - torch
+    - torchvision
+    - monai[all]
+    - nibabel
+    - SimpleITK
+    - numpy
+    - scipy
+    - pandas
+    - matplotlib
+    - seaborn
+    - scikit-learn
+    - scikit-image
+    - tqdm
+    - tensorboard
+    - einops
+    - pyyaml
+    - gdown
+    - lifelines
+    - scikit-survival

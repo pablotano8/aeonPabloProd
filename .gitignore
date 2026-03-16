@@ -1,0 +1,29 @@
+# Ignore large model checkpoints and related files
+checkpoints/segmentation/fold_all/checkpoint_final.pth
+checkpoints/segmentation/fold_all/
+checkpoints/segmentation/
+checkpoints/
+# Patient data (large NIfTI files, not distributable)
+data/
+
+# nnU-Net working directories (regenerated from data + checkpoints)
+nnunet/
+
+# Runtime outputs
+playground/output/
+results/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
