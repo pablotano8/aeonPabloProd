@@ -344,12 +344,7 @@
       align-items: center;
       justify-content: center;
       color: var(--text-dim);
-    }
-
-    .placeholder-icon {
-      font-size: 64px;
-      margin-bottom: 16px;
-      opacity: 0.3;
+      background: var(--bg);
     }
 
     .placeholder p {
@@ -472,49 +467,60 @@
 
     .risk-badge {
       display: inline-block;
-      padding: 3px 10px;
+      padding: 2px 8px;
       border-radius: 4px;
-      font-size: 12px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 500;
       margin-top: 6px;
+      opacity: 0.7;
     }
 
     .risk-badge.high-risk {
-      background: rgba(247, 79, 79, 0.15);
+      background: rgba(247, 79, 79, 0.1);
       color: var(--danger);
     }
 
     .risk-badge.medium-risk {
-      background: rgba(247, 169, 79, 0.15);
+      background: rgba(247, 169, 79, 0.1);
       color: var(--warning);
     }
 
     .risk-badge.low-risk {
-      background: rgba(79, 207, 127, 0.15);
+      background: rgba(79, 207, 127, 0.1);
       color: var(--success);
     }
 
     .survival-bar {
       margin-top: 10px;
-      height: 6px;
+      height: 12px;
       background: var(--border);
       border-radius: 3px;
       position: relative;
-      overflow: hidden;
     }
 
-    .survival-bar-fill {
-      height: 100%;
-      border-radius: 3px;
-      background: var(--accent);
-    }
-
-    .survival-bar-range {
+    .survival-bar-90 {
       position: absolute;
       height: 100%;
       border-radius: 3px;
-      opacity: 0.3;
       background: var(--accent);
+      opacity: 0.2;
+    }
+
+    .survival-bar-50 {
+      position: absolute;
+      height: 100%;
+      border-radius: 3px;
+      background: var(--accent);
+      opacity: 0.55;
+    }
+
+    .survival-bar-median {
+      position: absolute;
+      width: 2px;
+      height: 100%;
+      background: white;
+      border-radius: 1px;
+      transform: translateX(-50%);
     }
 
     .survival-note {
@@ -648,22 +654,34 @@
           <div class="survival-median-label">Estimated Median Survival</div>
           <div class="survival-median" id="survMedian">--</div>
           <div class="survival-range" id="survRange"></div>
-          <div>
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span class="risk-badge" id="survRiskBadge">--</span>
+            <span style="font-size:10px;color:var(--text-dim);opacity:0.7;">relative to training cohort</span>
           </div>
           <div class="survival-bar">
-            <div class="survival-bar-range" id="survBarRange"></div>
-            <div class="survival-bar-fill" id="survBarFill"></div>
+            <div class="survival-bar-90" id="survBar90"></div>
+            <div class="survival-bar-50" id="survBar50"></div>
+            <div class="survival-bar-median" id="survBarMedian"></div>
           </div>
-          <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); margin-top: 2px;">
-            <span>0</span>
-            <span>500 days</span>
-            <span>1000+</span>
+          <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--text-dim); margin-top: 3px;" id="survBarLabels">
+            <span id="survBarLabelLeft">0</span>
+            <span id="survBarLabelRight"></span>
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 6px; font-size: 10px; color: var(--text-dim);">
+            <span style="display:flex;align-items:center;gap:4px;">
+              <span style="display:inline-block;width:12px;height:8px;background:var(--accent);opacity:0.55;border-radius:2px;"></span>50% range
+            </span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <span style="display:inline-block;width:12px;height:8px;background:var(--accent);opacity:0.2;border-radius:2px;"></span>90% range
+            </span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <span style="display:inline-block;width:2px;height:10px;background:white;border-radius:1px;"></span>Median
+            </span>
           </div>
         </div>
         <div class="survival-note">
-          Based on CoxPH model (C-index 0.657 on predicted segmentation).
-          Uses tumor radiomics + clinical features. For research purposes only.
+          50% range: 50% probability the event falls within that interval.
+          90% range: 90% probability. For research purposes only.
         </div>
       </div>
 
@@ -673,6 +691,10 @@
         <p style="font-size: 12px; color: var(--text-dim); line-height: 1.5;">
           nnU-Net v2 trained on 236 FLAIR volumes.
           Dice: 0.915, Sensitivity: 90.0%, Precision: 93.1%.
+        </p>
+        <p style="font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 8px;">
+          Survival model: CoxPH trained on radiomics + clinical features.
+          C-index 0.657 on held-out predicted segmentations (random baseline = 0.5).
         </p>
       </div>
 
@@ -695,8 +717,7 @@
       <div class="canvas-container">
         <canvas id="gl"></canvas>
         <div class="placeholder" id="placeholder">
-          <div class="placeholder-icon">&#x1F4CB;</div>
-          <p>Upload a FLAIR NIfTI scan to begin</p>
+          <p id="placeholderText">Upload a FLAIR NIfTI scan to begin</p>
         </div>
         <div class="loading-overlay" id="loadingOverlay">
           <div class="spinner"></div>
@@ -797,7 +818,10 @@
 
     function handleFile(file) {
       uploadedFile = file;
+      uploadArea.querySelector(".upload-icon").textContent = "✅";
       uploadArea.querySelector("p").textContent = file.name;
+      uploadArea.querySelector(".formats").textContent = "Ready to run";
+      document.getElementById("placeholderText").textContent = "File loaded — click Run Segmentation";
       runBtn.disabled = false;
       setStatus("idle", `Loaded: ${file.name}`);
     }
@@ -894,10 +918,13 @@
       const months = s.median_months;
       document.getElementById("survMedian").textContent = `${days} days (${months.toFixed(1)} mo)`;
 
-      // Range (IQR)
+      // Percentiles
+      const p5  = Math.round(s.p5_days);
       const p25 = Math.round(s.p25_days);
       const p75 = Math.round(s.p75_days);
-      document.getElementById("survRange").textContent = `Prediction interval: ${p25}\u2013${p75} days`;
+      const p95 = Math.round(s.p95_days);
+      document.getElementById("survRange").textContent =
+        `50% range: ${p25}\u2013${p75} d  \u00B7  90% range: ${p5}\u2013${p95} d`;
 
       // Risk badge
       const badge = document.getElementById("survRiskBadge");
@@ -910,14 +937,16 @@
         badge.className = "risk-badge low-risk";
       }
 
-      // Survival bar (capped at 1000 days for visualization)
-      const maxDays = 1000;
-      const fillPct = Math.min(days / maxDays * 100, 100);
-      const rangePct1 = Math.min(p25 / maxDays * 100, 100);
-      const rangePct2 = Math.min(p75 / maxDays * 100, 100);
-      document.getElementById("survBarFill").style.width = fillPct + "%";
-      document.getElementById("survBarRange").style.left = rangePct1 + "%";
-      document.getElementById("survBarRange").style.width = (rangePct2 - rangePct1) + "%";
+      // Bar: scale to p95 with a 10% right margin so nothing gets clipped
+      const maxDays = Math.ceil(p95 * 1.1 / 100) * 100;
+      const pct = v => Math.min(v / maxDays * 100, 100).toFixed(1) + "%";
+      document.getElementById("survBar90").style.left  = pct(p5);
+      document.getElementById("survBar90").style.width = (Math.min(p95, maxDays) - p5) / maxDays * 100 + "%";
+      document.getElementById("survBar50").style.left  = pct(p25);
+      document.getElementById("survBar50").style.width = (Math.min(p75, maxDays) - p25) / maxDays * 100 + "%";
+      document.getElementById("survBarMedian").style.left = pct(days);
+      document.getElementById("survBarLabelLeft").textContent = "0";
+      document.getElementById("survBarLabelRight").textContent = maxDays + " days";
     }
 
     // Update opacity slider label on input

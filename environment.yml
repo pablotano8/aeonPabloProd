@@ -27,3 +27,4 @@ dependencies:
     - gdown
     - lifelines
     - scikit-survival
+    - nnunetv2

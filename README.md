@@ -11,7 +11,7 @@ conda activate aeon
 
 # Run the playground (web UI)
 python playground/server.py
-# Open http://localhost:8000
+
 ```
 
 Upload a FLAIR NIfTI scan, enter patient age and extent of resection, and get:
@@ -138,7 +138,7 @@ Given a FLAIR MRI scan and its tumor segmentation, the survival model predicts e
 h(t | X) = h_0(t) * exp(beta_1 * age + beta_2 * dist_from_center + ... + beta_6 * eor_str)
 ```
 
-CoxPH was chosen over LogNormal AFT (+0.003 C-index but requires parametric assumption), Random Survival Forests, Gradient Boosted Survival Analysis, XGBoost, and DeepSurv across 73 experiments.
+CoxPH was chosen over LogNormal AFT (+0.003 C-index but requires parametric assumption), Random Survival Forests, Gradient Boosted Survival Analysis, XGBoost, and DeepSurv.
 
 ### Features
 

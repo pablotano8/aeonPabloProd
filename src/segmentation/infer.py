@@ -21,6 +21,17 @@ import numpy as np
 import nibabel as nib
 import torch
 
+class _NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 SRC_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # src/
 REPO_ROOT = os.path.dirname(SRC_DIR)  # repository root
 DEFAULT_MODEL_DIR = os.path.join(REPO_ROOT, "checkpoints", "segmentation")
@@ -139,12 +150,12 @@ def infer(args):
     # Write stats to JSON so the server doesn't need to parse stdout
     stats = {
         "tumor_volume_cm3": tumor_volume_cm3,
-        "max_tumor_prob": float(tumor_prob.max()),
+        "max_tumor_prob": tumor_prob.max(),
         "mean_uncertainty": mean_uncertainty,
-        "tumor_voxels": int(seg_normal.sum()),
+        "tumor_voxels": seg_normal.sum(),
     }
     with open(os.path.join(args.output_dir, "stats.json"), "w") as f:
-        json.dump(stats, f)
+        json.dump(stats, f, cls=_NumpyEncoder)
 
     # Survival prediction (requires age)
     if args.age is not None:
@@ -214,19 +225,26 @@ def predict_survival(flair_path, seg_data, affine, age, eor, output_dir=None):
     else:
         risk_group = "Low Risk"
 
-    # IQR from survival function (25th and 75th percentiles)
-    below_75 = np.where(surv_func.y <= 0.25)[0]
-    below_25 = np.where(surv_func.y <= 0.75)[0]
-    p25 = float(surv_func.x[below_25[0]]) if len(below_25) > 0 else float(surv_func.x[0])
-    p75 = float(surv_func.x[below_75[0]]) if len(below_75) > 0 else float(surv_func.x[-1])
+    # Percentiles from survival function: S(t) = P(T > t), so pN where S(t) = 1 - N/100
+    def _percentile(sf, q):
+        """Return the q-th percentile of event time from a survival function."""
+        idx = np.where(sf.y <= 1.0 - q / 100.0)[0]
+        return float(sf.x[idx[0]]) if len(idx) > 0 else float(sf.x[-1])
+
+    p5  = _percentile(surv_func, 5)
+    p25 = _percentile(surv_func, 25)
+    p75 = _percentile(surv_func, 75)
+    p95 = _percentile(surv_func, 95)
 
     if calibrator is not None:
+        p5  = float(calibrator.predict([p5])[0])
         p25 = float(calibrator.predict([p25])[0])
         p75 = float(calibrator.predict([p75])[0])
+        p95 = float(calibrator.predict([p95])[0])
 
     print(f"\nMedian survival: {calibrated_median / 30.44:.1f} months ({calibrated_median:.0f} days)")
     print(f"Risk group: {risk_group}")
-    print(f"Prediction interval: [{p25:.0f}, {p75:.0f}] days")
+    print(f"50% PI: [{p25:.0f}, {p75:.0f}] days  |  90% PI: [{p5:.0f}, {p95:.0f}] days")
 
     if output_dir is not None:
         stats_path = os.path.join(output_dir, "stats.json")
@@ -239,8 +257,10 @@ def predict_survival(flair_path, seg_data, affine, age, eor, output_dir=None):
             "median_days": calibrated_median,
             "risk_group": risk_group,
             "risk_score": risk_score,
+            "p5_days": p5,
             "p25_days": p25,
             "p75_days": p75,
+            "p95_days": p95,
             "median_months": calibrated_median / 30.44,
         }
         with open(stats_path, "w") as f:
