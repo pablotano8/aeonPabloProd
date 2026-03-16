@@ -35,9 +35,9 @@ Evaluated on 74 held-out validation subjects.
 
 | Metric | Value |
 |--------|-------|
-| C-index (5-fold CV, 20 seeds) | 0.672 ± 0.006 |
-| C-index (predicted segmentation) | 0.657 ± 0.006 |
-| Calibrated MAE | 245 days |
+| C-index (nested 5-fold CV x 5 seeds) | 0.6722 ± 0.0324 |
+| C-index (leave-one-out CV, N=236) | 0.6711 |
+| MAE (leave-one-out CV) | 235 days |
 
 When using predicted segmentation from nnU-Net (as in the playground) instead of ground-truth masks, C-index drops by ~0.015. The gap is driven by `tumor_min` (GT-vs-predicted correlation: 0.48) — boundary differences change the minimum intensity within the tumor region. Other features are highly correlated (dist_from_center: 0.99, tumor_intensity_ratio: 0.97).
 
@@ -139,7 +139,15 @@ CoxPH was chosen over LogNormal AFT, Random Survival Forests, Gradient Boosted S
 
 ### Features
 
-5 features selected through greedy forward selection from 24 candidates. Each retained only if it improved 5-fold CV C-index consistently across 50 random seeds with p < 0.05.
+5 features selected through greedy forward selection (nested 5-fold CV x 5 seeds) from 24 candidates:
+
+| Feature Added | C-index (nested CV) | MAE (days) |
+|--------------|-------------------|------------|
+| +`age` | 0.6241 ± 0.0377 | 255 ± 20 |
+| +`dist_from_center` | 0.6570 ± 0.0365 | 244 ± 23 |
+| +`tumor_min` | 0.6626 ± 0.0367 | 243 ± 21 |
+| +`tumor_intensity_ratio` | 0.6695 ± 0.0322 | 240 ± 18 |
+| +`eor_str` | **0.6722 ± 0.0324** | **237 ± 18** |
 
 | Feature | Coefficient | HR | Description |
 |---------|------------|-----|-------------|
@@ -174,7 +182,7 @@ PYTHONPATH=src/survival python src/survival/evaluate.py \
 
 ### Limitations
 
-- **Age dominates**: all five imaging features combined contribute only +0.025 C-index.
+- **Age dominates**: all five imaging features combined contribute only +0.05 C-index.
 - **No molecular markers**: MGMT methylation and IDH mutation are stronger prognostic factors but unavailable from imaging.
 - **Single modality**: using only FLAIR; T1ce and T2 could provide additional signal.
 - **Small dataset**: N=236 limits model complexity.
