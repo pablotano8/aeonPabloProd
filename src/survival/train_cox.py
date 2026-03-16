@@ -1,4 +1,9 @@
-"""Training script for Cox Proportional Hazards survival model (production)."""
+"""Training script for Cox Proportional Hazards survival model (production).
+
+Trains on all available data (train + validation) with alpha=3.0.
+Prediction intervals are derived directly from survival function percentiles
+(no isotonic calibration needed).
+"""
 
 import argparse
 import os
@@ -6,8 +11,6 @@ import pickle
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
-from sklearn.isotonic import IsotonicRegression
-from sklearn.model_selection import KFold
 from sksurv.linear_model import CoxPHSurvivalAnalysis
 from sksurv.metrics import concordance_index_censored
 
@@ -26,12 +29,10 @@ def main():
     parser = argparse.ArgumentParser(description="Train CoxPH survival model")
     parser.add_argument("--data_dir", default="data", help="Data directory")
     parser.add_argument("--survival_csv", default="data/survival_info.csv")
-    parser.add_argument("--alpha", type=float, default=0.1, help="L2 regularization")
+    parser.add_argument("--alpha", type=float, default=3.0, help="L2 regularization")
     parser.add_argument("--output_dir", default="checkpoints/survival")
     parser.add_argument("--features_cache", default="data/train_features.csv")
     parser.add_argument("--val_features_cache", default="data/val_features.csv")
-    parser.add_argument("--use_all_data", action="store_true",
-                        help="Train on train+val combined (for production deployment)")
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -46,16 +47,14 @@ def main():
         train_df.to_csv(args.features_cache, index=False)
         print(f"Saved features to {args.features_cache}")
 
-    if args.use_all_data:
-        if os.path.exists(args.val_features_cache):
-            val_df = pd.read_csv(args.val_features_cache)
-        else:
-            val_df = build_feature_dataframe(args.data_dir, args.survival_csv, split="validation")
-            val_df.to_csv(args.val_features_cache, index=False)
-        train_df = pd.concat([train_df, val_df], ignore_index=True)
-        print(f"Using ALL data: {len(train_df)} patients (train + val)")
+    # Always include validation data for production model
+    if os.path.exists(args.val_features_cache):
+        val_df = pd.read_csv(args.val_features_cache)
     else:
-        print(f"Training set: {len(train_df)} patients")
+        val_df = build_feature_dataframe(args.data_dir, args.survival_csv, split="validation")
+        val_df.to_csv(args.val_features_cache, index=False)
+    train_df = pd.concat([train_df, val_df], ignore_index=True)
+    print(f"Using ALL data: {len(train_df)} patients (train + val)")
 
     feature_cols = get_feature_columns()
     X_raw = train_df[feature_cols].values.astype(np.float64)
@@ -88,31 +87,6 @@ def main():
     with open(scaler_path, "wb") as f:
         pickle.dump(scaler, f)
     print(f"\nModel saved to {model_path}")
-
-    # Fit calibrator using out-of-fold predictions
-    print("Fitting calibrator via 5-fold cross-validation...")
-    oof_predicted = np.zeros(len(X_train))
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
-
-    for fold_train_idx, fold_val_idx in kf.split(X_train):
-        fold_scaler = StandardScaler()
-        X_ft = np.nan_to_num(fold_scaler.fit_transform(X_raw[fold_train_idx]), nan=0.0)
-        X_fv = np.nan_to_num(fold_scaler.transform(X_raw[fold_val_idx]), nan=0.0)
-
-        fold_model = CoxPHSurvivalAnalysis(alpha=args.alpha)
-        fold_model.fit(X_ft, y_train[fold_train_idx])
-
-        surv_funcs = fold_model.predict_survival_function(X_fv)
-        for i, sf in zip(fold_val_idx, surv_funcs):
-            below = np.where(sf.y <= 0.5)[0]
-            oof_predicted[i] = sf.x[below[0]] if len(below) > 0 else sf.x[-1]
-
-    calibrator = IsotonicRegression(out_of_bounds="clip")
-    calibrator.fit(oof_predicted, train_df["time"].values)
-    cal_path = os.path.join(args.output_dir, "calibrator.pkl")
-    with open(cal_path, "wb") as f:
-        pickle.dump(calibrator, f)
-    print(f"Calibrator saved to {cal_path}")
 
 
 if __name__ == "__main__":

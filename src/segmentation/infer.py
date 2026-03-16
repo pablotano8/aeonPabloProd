@@ -170,7 +170,6 @@ def predict_survival(flair_path, seg_data, affine, age, eor, output_dir=None):
     survival_dir = os.path.join(REPO_ROOT, "checkpoints", "survival")
     model_path = os.path.join(survival_dir, "coxph_model.pkl")
     scaler_path = os.path.join(survival_dir, "scaler.pkl")
-    calibrator_path = os.path.join(survival_dir, "calibrator.pkl")
 
     if not os.path.exists(model_path):
         print("SURVIVAL_ERROR: Model not found")
@@ -194,10 +193,6 @@ def predict_survival(flair_path, seg_data, affine, age, eor, output_dir=None):
         model = pickle.load(f)
     with open(scaler_path, "rb") as f:
         scaler = pickle.load(f)
-    calibrator = None
-    if os.path.exists(calibrator_path):
-        with open(calibrator_path, "rb") as f:
-            calibrator = pickle.load(f)
 
     feature_cols = get_feature_columns()
     X = np.array([[features[c] for c in feature_cols]], dtype=np.float64)
@@ -206,43 +201,29 @@ def predict_survival(flair_path, seg_data, affine, age, eor, output_dir=None):
     # Risk score
     risk_score = float(model.predict(X)[0])
 
-    # Median survival from survival function
+    # Percentiles from survival function: S(t) = P(T > t), so p_q where S(t) = 1 - q
     surv_func = model.predict_survival_function(X)[0]
-    below_half = np.where(surv_func.y <= 0.5)[0]
-    median_survival = float(surv_func.x[below_half[0]]) if len(below_half) > 0 else float(surv_func.x[-1])
 
-    # Calibrated median
-    calibrated_median = median_survival
-    if calibrator is not None:
-        calibrated_median = float(calibrator.predict([median_survival])[0])
+    def _percentile(sf, p):
+        """Return time at which fraction p of patients have died."""
+        below = np.where(sf.y <= (1 - p))[0]
+        return float(sf.x[below[0]]) if len(below) > 0 else float(sf.x[-1])
 
-    # Risk group based on tertiles from training data
-    # Thresholds derived from training distribution (see ml_findings.md)
-    if calibrated_median < 300:
+    p5  = _percentile(surv_func, 0.05)
+    p25 = _percentile(surv_func, 0.25)
+    median_survival = _percentile(surv_func, 0.50)
+    p75 = _percentile(surv_func, 0.75)
+    p95 = _percentile(surv_func, 0.95)
+
+    # Risk group based on median survival
+    if median_survival < 300:
         risk_group = "High Risk"
-    elif calibrated_median < 450:
+    elif median_survival < 450:
         risk_group = "Medium Risk"
     else:
         risk_group = "Low Risk"
 
-    # Percentiles from survival function: S(t) = P(T > t), so pN where S(t) = 1 - N/100
-    def _percentile(sf, q):
-        """Return the q-th percentile of event time from a survival function."""
-        idx = np.where(sf.y <= 1.0 - q / 100.0)[0]
-        return float(sf.x[idx[0]]) if len(idx) > 0 else float(sf.x[-1])
-
-    p5  = _percentile(surv_func, 5)
-    p25 = _percentile(surv_func, 25)
-    p75 = _percentile(surv_func, 75)
-    p95 = _percentile(surv_func, 95)
-
-    if calibrator is not None:
-        p5  = float(calibrator.predict([p5])[0])
-        p25 = float(calibrator.predict([p25])[0])
-        p75 = float(calibrator.predict([p75])[0])
-        p95 = float(calibrator.predict([p95])[0])
-
-    print(f"\nMedian survival: {calibrated_median / 30.44:.1f} months ({calibrated_median:.0f} days)")
+    print(f"\nMedian survival: {median_survival / 30.44:.1f} months ({median_survival:.0f} days)")
     print(f"Risk group: {risk_group}")
     print(f"50% PI: [{p25:.0f}, {p75:.0f}] days  |  90% PI: [{p5:.0f}, {p95:.0f}] days")
 
@@ -254,14 +235,14 @@ def predict_survival(flair_path, seg_data, affine, age, eor, output_dir=None):
         except (FileNotFoundError, json.JSONDecodeError):
             stats = {}
         stats["survival"] = {
-            "median_days": calibrated_median,
+            "median_days": median_survival,
             "risk_group": risk_group,
             "risk_score": risk_score,
             "p5_days": p5,
             "p25_days": p25,
             "p75_days": p75,
             "p95_days": p95,
-            "median_months": calibrated_median / 30.44,
+            "median_months": median_survival / 30.44,
         }
         with open(stats_path, "w") as f:
             json.dump(stats, f)

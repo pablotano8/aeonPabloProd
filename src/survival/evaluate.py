@@ -34,7 +34,7 @@ def is_lifelines_model(model):
     return isinstance(model, LogNormalAFTFitter)
 
 
-def evaluate(model, scaler, val_df, train_df, calibrator=None):
+def evaluate(model, scaler, val_df, train_df):
     """Run full benchmark evaluation."""
     feature_cols = get_feature_columns()
     X_val = val_df[feature_cols].values.astype(np.float64)
@@ -120,13 +120,6 @@ def evaluate(model, scaler, val_df, train_df, calibrator=None):
         results["median_ae_days"] = median_ae
         results["predicted_medians"] = predicted_medians.tolist()
 
-        # Calibrated predictions
-        if calibrator is not None:
-            calibrated = calibrator.predict(predicted_medians)
-            results["calibrated_mae_days"] = float(np.mean(np.abs(calibrated - actual_times)))
-            results["calibrated_median_ae_days"] = float(np.median(np.abs(calibrated - actual_times)))
-            results["calibrated_medians"] = calibrated.tolist()
-            results["calibrated_mean_pred"] = float(calibrated.mean())
     except Exception as e:
         results["mae_days"] = None
         results["mae_error"] = str(e)
@@ -177,7 +170,6 @@ def main():
     parser.add_argument("--output", default="results/survival_eval.json")
     parser.add_argument("--train_features_cache", default="data/train_features.csv")
     parser.add_argument("--val_features_cache", default="data/val_features.csv")
-    parser.add_argument("--calibrator_path", default="checkpoints/survival/calibrator.pkl")
     args = parser.parse_args()
 
     # Load model and scaler
@@ -185,12 +177,6 @@ def main():
         model = pickle.load(f)
     with open(args.scaler_path, "rb") as f:
         scaler = pickle.load(f)
-
-    calibrator = None
-    if os.path.exists(args.calibrator_path):
-        with open(args.calibrator_path, "rb") as f:
-            calibrator = pickle.load(f)
-        print(f"Loaded calibrator from {args.calibrator_path}")
 
     # Build or load features
     if os.path.exists(args.val_features_cache):
@@ -212,7 +198,7 @@ def main():
     print(f"Training set: {len(train_df)} patients (for IBS reference)")
 
     # Evaluate
-    results = evaluate(model, scaler, val_df, train_df, calibrator=calibrator)
+    results = evaluate(model, scaler, val_df, train_df)
 
     # Print results
     print("\n" + "=" * 50)
@@ -224,8 +210,6 @@ def main():
     if results.get("mae_days") is not None:
         print(f"MAE (days):               {results['mae_days']:.1f}")
         print(f"Median AE (days):         {results['median_ae_days']:.1f}")
-    if results.get("calibrated_mae_days") is not None:
-        print(f"Calibrated MAE (days):    {results['calibrated_mae_days']:.1f}")
     if results.get("auc_1year") is not None:
         print(f"1-year survival AUC:      {results['auc_1year']:.4f}")
     print("=" * 50)

@@ -177,6 +177,6 @@ def get_feature_columns():
     """Return the list of feature column names used for model input."""
     return [
         "age", "dist_from_center",
-        "tumor_min", "extent_x", "tumor_intensity_ratio",
+        "tumor_min", "tumor_intensity_ratio",
         "eor_str",
     ]

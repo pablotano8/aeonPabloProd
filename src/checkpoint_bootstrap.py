@@ -21,7 +21,6 @@ REQUIRED_FILES = [
     CHECKPOINTS_DIR / "segmentation" / "dataset_fingerprint.json",
     CHECKPOINTS_DIR / "segmentation" / "plans.json",
     CHECKPOINTS_DIR / "segmentation" / "fold_all" / "checkpoint_final.pth",
-    CHECKPOINTS_DIR / "survival" / "calibrator.pkl",
     CHECKPOINTS_DIR / "survival" / "coxph_model.pkl",
     CHECKPOINTS_DIR / "survival" / "lognormal_aft.pkl",
     CHECKPOINTS_DIR / "survival" / "scaler.pkl",

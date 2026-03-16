@@ -231,12 +231,6 @@ class Playground:
             with open(os.path.join(survival_dir, "scaler.pkl"), "rb") as f:
                 scaler = pickle.load(f)
 
-            calibrator = None
-            calibrator_path = os.path.join(survival_dir, "calibrator.pkl")
-            if os.path.exists(calibrator_path):
-                with open(calibrator_path, "rb") as f:
-                    calibrator = pickle.load(f)
-
             feature_cols = get_feature_columns()
             X = np.array([[features[c] for c in feature_cols]], dtype=np.float64)
             X = np.nan_to_num(scaler.transform(X), nan=0.0)
@@ -244,37 +238,32 @@ class Playground:
             risk_score = float(model.predict(X)[0])
             surv_func = model.predict_survival_function(X)[0]
 
-            below_half = np.where(surv_func.y <= 0.5)[0]
-            median_survival = (float(surv_func.x[below_half[0]])
-                               if len(below_half) > 0 else float(surv_func.x[-1]))
+            def _percentile(sf, p):
+                below = np.where(sf.y <= (1 - p))[0]
+                return float(sf.x[below[0]]) if len(below) > 0 else float(sf.x[-1])
 
-            calibrated_median = median_survival
-            if calibrator is not None:
-                calibrated_median = float(calibrator.predict([median_survival])[0])
+            p5 = _percentile(surv_func, 0.05)
+            p25 = _percentile(surv_func, 0.25)
+            median_survival = _percentile(surv_func, 0.50)
+            p75 = _percentile(surv_func, 0.75)
+            p95 = _percentile(surv_func, 0.95)
 
-            if calibrated_median < 300:
+            if median_survival < 300:
                 risk_group = "High Risk"
-            elif calibrated_median < 450:
+            elif median_survival < 450:
                 risk_group = "Medium Risk"
             else:
                 risk_group = "Low Risk"
 
-            below_75 = np.where(surv_func.y <= 0.25)[0]
-            below_25 = np.where(surv_func.y <= 0.75)[0]
-            p25 = float(surv_func.x[below_25[0]]) if len(below_25) > 0 else float(surv_func.x[0])
-            p75 = float(surv_func.x[below_75[0]]) if len(below_75) > 0 else float(surv_func.x[-1])
-
-            if calibrator is not None:
-                p25 = float(calibrator.predict([p25])[0])
-                p75 = float(calibrator.predict([p75])[0])
-
             return {
-                "median_days": calibrated_median,
+                "median_days": median_survival,
                 "risk_group": risk_group,
                 "risk_score": risk_score,
+                "p5_days": p5,
                 "p25_days": p25,
                 "p75_days": p75,
-                "median_months": calibrated_median / 30.44,
+                "p95_days": p95,
+                "median_months": median_survival / 30.44,
             }
 
         return web_app
