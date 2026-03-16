@@ -50,11 +50,9 @@ When using predicted segmentation from nnU-Net (as in the playground) instead of
 │   │   ├── dataset.json
 │   │   ├── dataset_fingerprint.json
 │   │   └── plans.json
-│   └── survival/              # CoxPH model + calibrator
+│   └── survival/              # CoxPH model
 │       ├── coxph_model.pkl
-│       ├── lognormal_aft.pkl
-│       ├── scaler.pkl
-│       └── calibrator.pkl
+│       └── scaler.pkl
 ├── src/
 │   ├── segmentation/
 │   │   ├── train.py           # Train nnU-Net (wraps CLI pipeline)
@@ -65,7 +63,6 @@ When using predicted segmentation from nnU-Net (as in the playground) instead of
 │   └── survival/
 │       ├── features.py        # Radiomics feature extraction
 │       ├── train_cox.py       # Train CoxPH (production)
-│       ├── train_aft.py       # Train LogNormal AFT (alternative)
 │       └── evaluate.py        # Survival model evaluation
 ├── playground/
 │   ├── server.py              # Local web server
@@ -132,30 +129,27 @@ Given a FLAIR MRI scan and its tumor segmentation, the survival model predicts e
 
 ### Model
 
-**Cox Proportional Hazards** (CoxPH), implemented via [scikit-survival](https://scikit-survival.readthedocs.io/), with L2 regularization alpha = 0.1.
+**Cox Proportional Hazards** (CoxPH), implemented via [scikit-survival](https://scikit-survival.readthedocs.io/), with L2 regularization alpha = 3.0. Trained on all available data (train + validation).
 
 ```
-h(t | X) = h_0(t) * exp(beta_1 * age + beta_2 * dist_from_center + ... + beta_6 * eor_str)
+h(t | X) = h_0(t) * exp(beta_1 * age + beta_2 * dist_from_center + ... + beta_5 * eor_str)
 ```
 
-CoxPH was chosen over LogNormal AFT (+0.003 C-index but requires parametric assumption), Random Survival Forests, Gradient Boosted Survival Analysis, XGBoost, and DeepSurv.
+CoxPH was chosen over LogNormal AFT, Random Survival Forests, Gradient Boosted Survival Analysis, XGBoost, and DeepSurv.
 
 ### Features
 
-6 features selected through greedy forward selection from 24 candidates. Each retained only if it improved 5-fold CV C-index consistently across 50 random seeds with p < 0.05.
+5 features selected through greedy forward selection from 24 candidates. Each retained only if it improved 5-fold CV C-index consistently across 50 random seeds with p < 0.05.
 
 | Feature | Coefficient | HR | Description |
 |---------|------------|-----|-------------|
-| `age` | +0.550 | 1.73 | Patient age at diagnosis. Strongest predictor (-0.074 C-index if removed). |
-| `dist_from_center` | -0.249 | 0.78 | Tumor centroid distance from brain center (normalized). Central tumors = worse prognosis. |
-| `tumor_intensity_ratio` | -0.222 | 0.80 | Mean FLAIR intensity in tumor / mean brain intensity. |
+| `age` | +0.546 | 1.73 | Patient age at diagnosis. Strongest predictor. |
+| `dist_from_center` | -0.299 | 0.74 | Tumor centroid distance from brain center (normalized). Central tumors = worse prognosis. |
+| `tumor_intensity_ratio` | -0.213 | 0.81 | Mean FLAIR intensity in tumor / mean brain intensity. |
 | `tumor_min` | -0.154 | 0.86 | Minimum FLAIR intensity in tumor. Low = necrosis = aggressive. |
-| `extent_x` | +0.125 | 1.13 | Lateral tumor spread (mm). May indicate midline crossing. |
-| `eor_str` | -0.113 | 0.89 | Subtotal resection indicator (binary). |
+| `eor_str` | -0.120 | 0.89 | Subtotal resection indicator (binary). |
 
-### Calibration
-
-Isotonic calibration corrects systematic underestimation. Fitted via 5-fold out-of-fold predictions. Reduces MAE from 247 to 245 days and shifts mean prediction from 352 to 452 days (actual mean: 446).
+Prediction intervals are derived directly from survival function percentiles (no calibration needed with alpha=3.0).
 
 ### Risk Stratification
 
@@ -170,11 +164,8 @@ All group separations are statistically significant (log-rank p < 0.01).
 ### Training
 
 ```bash
-# Train CoxPH (production model)
-PYTHONPATH=src/survival python src/survival/train_cox.py --use_all_data
-
-# Train LogNormal AFT (alternative, +0.003 C-index but parametric assumption)
-PYTHONPATH=src/survival python src/survival/train_aft.py --use_all_data
+# Train CoxPH (production model, trains on all data by default)
+PYTHONPATH=src/survival python src/survival/train_cox.py
 
 # Evaluate
 PYTHONPATH=src/survival python src/survival/evaluate.py \

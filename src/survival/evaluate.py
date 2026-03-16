@@ -9,7 +9,6 @@ import pandas as pd
 import sys
 from sklearn.metrics import roc_auc_score
 from sksurv.metrics import concordance_index_censored, integrated_brier_score
-from lifelines import LogNormalAFTFitter
 
 from features import build_feature_dataframe, get_feature_columns
 
@@ -29,11 +28,6 @@ def make_survival_array(df):
     )
 
 
-def is_lifelines_model(model):
-    """Check if model is a lifelines fitter."""
-    return isinstance(model, LogNormalAFTFitter)
-
-
 def evaluate(model, scaler, val_df, train_df):
     """Run full benchmark evaluation."""
     feature_cols = get_feature_columns()
@@ -46,14 +40,7 @@ def evaluate(model, scaler, val_df, train_df):
 
     results = {}
 
-    if is_lifelines_model(model):
-        # LogNormal AFT: use predicted median for risk scores
-        df_val = pd.DataFrame(X_val, columns=feature_cols)
-        predicted_medians = model.predict_median(df_val).values.flatten()
-        risk_scores = -predicted_medians  # higher risk = shorter survival
-    else:
-        # scikit-survival model
-        risk_scores = model.predict(X_val)
+    risk_scores = model.predict(X_val)
 
     # 1. C-index (primary metric)
     c_index, concordant, discordant, tied_risk, tied_time = concordance_index_censored(
@@ -64,54 +51,35 @@ def evaluate(model, scaler, val_df, train_df):
     results["discordant_pairs"] = int(discordant)
 
     # 2. Integrated Brier Score
-    if not is_lifelines_model(model):
-        try:
-            surv_funcs = model.predict_survival_function(X_val)
-            times = np.linspace(
-                max(y_train["time"].min(), y_val["time"].min()) + 1,
-                min(y_train["time"].max(), y_val["time"].max()) - 1,
-                100,
-            )
-            surv_probs = np.zeros((len(X_val), len(times)))
-            for i, sf in enumerate(surv_funcs):
-                surv_probs[i] = sf(times)
-            ibs = integrated_brier_score(y_train, y_val, surv_probs, times)
-            results["integrated_brier_score"] = float(ibs)
-        except Exception as e:
-            results["integrated_brier_score"] = None
-            results["ibs_error"] = str(e)
-    else:
-        # LogNormal AFT: compute IBS from parametric survival function
-        try:
-            df_val = pd.DataFrame(X_val, columns=feature_cols)
-            times = np.linspace(
-                max(y_train["time"].min(), y_val["time"].min()) + 1,
-                min(y_train["time"].max(), y_val["time"].max()) - 1,
-                100,
-            )
-            surv_probs = model.predict_survival_function(df_val, times=times).values.T
-            ibs = integrated_brier_score(y_train, y_val, surv_probs, times)
-            results["integrated_brier_score"] = float(ibs)
-        except Exception as e:
-            results["integrated_brier_score"] = None
-            results["ibs_error"] = str(e)
+    try:
+        surv_funcs = model.predict_survival_function(X_val)
+        times = np.linspace(
+            max(y_train["time"].min(), y_val["time"].min()) + 1,
+            min(y_train["time"].max(), y_val["time"].max()) - 1,
+            100,
+        )
+        surv_probs = np.zeros((len(X_val), len(times)))
+        for i, sf in enumerate(surv_funcs):
+            surv_probs[i] = sf(times)
+        ibs = integrated_brier_score(y_train, y_val, surv_probs, times)
+        results["integrated_brier_score"] = float(ibs)
+    except Exception as e:
+        results["integrated_brier_score"] = None
+        results["ibs_error"] = str(e)
 
     # 3. MAE of predicted median survival time
     try:
-        if is_lifelines_model(model):
-            pass  # predicted_medians already computed above
-        else:
-            surv_funcs = model.predict_survival_function(X_val)
-            predicted_medians = []
-            for sf in surv_funcs:
-                sf_times = sf.x
-                sf_probs = sf.y
-                below_half = np.where(sf_probs <= 0.5)[0]
-                if len(below_half) > 0:
-                    predicted_medians.append(float(sf_times[below_half[0]]))
-                else:
-                    predicted_medians.append(float(sf_times[-1]))
-            predicted_medians = np.array(predicted_medians)
+        surv_funcs = model.predict_survival_function(X_val)
+        predicted_medians = []
+        for sf in surv_funcs:
+            sf_times = sf.x
+            sf_probs = sf.y
+            below_half = np.where(sf_probs <= 0.5)[0]
+            if len(below_half) > 0:
+                predicted_medians.append(float(sf_times[below_half[0]]))
+            else:
+                predicted_medians.append(float(sf_times[-1]))
+        predicted_medians = np.array(predicted_medians)
 
         actual_times = val_df["time"].values
         mae = float(np.mean(np.abs(predicted_medians - actual_times)))
@@ -124,26 +92,7 @@ def evaluate(model, scaler, val_df, train_df):
         results["mae_days"] = None
         results["mae_error"] = str(e)
 
-    # 4. Prediction interval calibration (LogNormal AFT only)
-    if is_lifelines_model(model):
-        try:
-            df_val = pd.DataFrame(X_val, columns=feature_cols)
-            actual_times = val_df["time"].values
-            # LogNormal percentiles: p=0.9 is 10th percentile of survival, p=0.1 is 90th
-            p10 = model.predict_percentile(df_val, p=0.9).values.flatten()
-            p25 = model.predict_percentile(df_val, p=0.75).values.flatten()
-            p75 = model.predict_percentile(df_val, p=0.25).values.flatten()
-            p90 = model.predict_percentile(df_val, p=0.1).values.flatten()
-            iqr_coverage = float(np.mean((p25 <= actual_times) & (actual_times <= p75)))
-            p80_coverage = float(np.mean((p10 <= actual_times) & (actual_times <= p90)))
-            results["iqr_coverage"] = iqr_coverage
-            results["p80_coverage"] = p80_coverage
-            results["median_iqr_width_days"] = float(np.median(p75 - p25))
-            results["median_p80_width_days"] = float(np.median(p90 - p10))
-        except Exception as e:
-            results["interval_error"] = str(e)
-
-    # 5. 1-year survival AUC
+    # 4. 1-year survival AUC
     try:
         actual_1yr = (val_df["time"].values > 365).astype(int)
         if len(np.unique(actual_1yr)) > 1:
