@@ -4,4 +4,4 @@ Once the archive is uploaded, set CHECKPOINT_ARCHIVE_URL to the public
 Google Drive share link for the single checkpoints.zip artifact.
 """
 
-CHECKPOINT_ARCHIVE_URL = "https://drive.google.com/file/d/1kwQ93KMlCnis-GDX6pIT7aFGcrgXLkDV/view?usp=sharing"
+CHECKPOINT_ARCHIVE_URL = "https://drive.google.com/file/d/1Y760objXOBo0DIU0XUjHVnQm_jCb87ir/view?usp=sharing"
