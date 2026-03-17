@@ -13,7 +13,6 @@ features extracted from the predicted segmentation.
 import argparse
 import json
 import os
-import pickle
 import sys
 import tempfile
 import shutil
@@ -40,6 +39,9 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from checkpoint_bootstrap import ensure_checkpoints
+
+sys.path.insert(0, os.path.join(SRC_DIR, "survival"))
+from predict import predict_survival
 
 # Threshold pre-computed on 74 validation subjects to achieve ~99% sensitivity.
 # At 0.001: Sensitivity=99.0%, Precision=60.6%, Dice=0.752
@@ -161,91 +163,6 @@ def infer(args):
     if args.age is not None:
         predict_survival(args.input, seg_normal, affine, args.age, args.eor, args.output_dir)
 
-
-def predict_survival(flair_path, seg_data, affine, age, eor, output_dir=None):
-    """Run CoxPH survival prediction from predicted segmentation + clinical data."""
-    sys.path.insert(0, os.path.join(SRC_DIR, "survival"))
-    from features import extract_patient_features, get_feature_columns
-
-    survival_dir = os.path.join(REPO_ROOT, "checkpoints", "survival")
-    model_path = os.path.join(survival_dir, "coxph_model.pkl")
-    scaler_path = os.path.join(survival_dir, "scaler.pkl")
-
-    if not os.path.exists(model_path):
-        print("SURVIVAL_ERROR: Model not found")
-        return
-
-    # Save segmentation as temp nifti for feature extraction
-    with tempfile.NamedTemporaryFile(suffix=".nii.gz", delete=False) as tmp:
-        nib.save(nib.Nifti1Image(seg_data, affine), tmp.name)
-        seg_path = tmp.name
-
-    try:
-        features = extract_patient_features(flair_path, seg_path)
-    finally:
-        os.unlink(seg_path)
-
-    features["age"] = age
-    features["eor_str"] = 1.0 if eor == "STR" else 0.0
-
-    # Load model artifacts
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
-    with open(scaler_path, "rb") as f:
-        scaler = pickle.load(f)
-
-    feature_cols = get_feature_columns()
-    X = np.array([[features[c] for c in feature_cols]], dtype=np.float64)
-    X = np.nan_to_num(scaler.transform(X), nan=0.0)
-
-    # Risk score
-    risk_score = float(model.predict(X)[0])
-
-    # Percentiles from survival function: S(t) = P(T > t), so p_q where S(t) = 1 - q
-    surv_func = model.predict_survival_function(X)[0]
-
-    def _percentile(sf, p):
-        """Return time at which fraction p of patients have died."""
-        below = np.where(sf.y <= (1 - p))[0]
-        return float(sf.x[below[0]]) if len(below) > 0 else float(sf.x[-1])
-
-    p5  = _percentile(surv_func, 0.05)
-    p25 = _percentile(surv_func, 0.25)
-    median_survival = _percentile(surv_func, 0.50)
-    p75 = _percentile(surv_func, 0.75)
-    p95 = _percentile(surv_func, 0.95)
-
-    # Risk group based on median survival
-    if median_survival < 300:
-        risk_group = "High Risk"
-    elif median_survival < 450:
-        risk_group = "Medium Risk"
-    else:
-        risk_group = "Low Risk"
-
-    print(f"\nMedian survival: {median_survival / 30.44:.1f} months ({median_survival:.0f} days)")
-    print(f"Risk group: {risk_group}")
-    print(f"50% PI: [{p25:.0f}, {p75:.0f}] days  |  90% PI: [{p5:.0f}, {p95:.0f}] days")
-
-    if output_dir is not None:
-        stats_path = os.path.join(output_dir, "stats.json")
-        try:
-            with open(stats_path) as f:
-                stats = json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            stats = {}
-        stats["survival"] = {
-            "median_days": median_survival,
-            "risk_group": risk_group,
-            "risk_score": risk_score,
-            "p5_days": p5,
-            "p25_days": p25,
-            "p75_days": p75,
-            "p95_days": p95,
-            "median_months": median_survival / 30.44,
-        }
-        with open(stats_path, "w") as f:
-            json.dump(stats, f)
 
 
 if __name__ == "__main__":

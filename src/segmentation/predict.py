@@ -1,5 +1,7 @@
 """Batch segmentation prediction for a set of patients.
 
+This script is used for evaluation only, not by the app.
+
 Runs nnU-Net inference on all patients in a given split directory,
 producing binary segmentation masks. Skips patients that already
 have predictions unless --overwrite is set.

@@ -43,7 +43,7 @@ image = (
         "nnUNet_results": "/app/nnunet/results",
     })
     .add_local_dir("checkpoints", remote_path="/app/checkpoints")
-    .add_local_dir("src/survival", remote_path="/app/src/survival")
+    .add_local_dir("src", remote_path="/app/src")
     .add_local_file("playground/index.html", remote_path="/app/playground/index.html")
     .add_local_dir("playground/lib", remote_path="/app/playground/lib")
 )
@@ -84,7 +84,6 @@ class Playground:
     @modal.asgi_app()
     def serve(self):
         import json
-        import pickle
         import shutil
         import sys
         import tempfile
@@ -203,67 +202,14 @@ class Playground:
                     status_code=500,
                 )
 
+        if "/app/src/survival" not in sys.path:
+            sys.path.insert(0, "/app/src/survival")
+        from predict import predict_survival
+
         def _predict_survival(flair_path, seg_data, affine, age, eor):
-            """Run CoxPH survival prediction."""
-            if "/app/src/survival" not in sys.path:
-                sys.path.insert(0, "/app/src/survival")
-            from features import extract_patient_features, get_feature_columns
-
-            survival_dir = "/app/checkpoints/survival"
-            model_path = os.path.join(survival_dir, "coxph_model.pkl")
-            if not os.path.exists(model_path):
-                return None
-
-            with tempfile.NamedTemporaryFile(suffix=".nii.gz", delete=False) as tmp:
-                nib.save(nib.Nifti1Image(seg_data, affine), tmp.name)
-                seg_path = tmp.name
-
-            try:
-                features = extract_patient_features(flair_path, seg_path)
-            finally:
-                os.unlink(seg_path)
-
-            features["age"] = age
-            features["eor_str"] = 1.0 if eor == "STR" else 0.0
-
-            with open(model_path, "rb") as f:
-                model = pickle.load(f)
-            with open(os.path.join(survival_dir, "scaler.pkl"), "rb") as f:
-                scaler = pickle.load(f)
-
-            feature_cols = get_feature_columns()
-            X = np.array([[features[c] for c in feature_cols]], dtype=np.float64)
-            X = np.nan_to_num(scaler.transform(X), nan=0.0)
-
-            risk_score = float(model.predict(X)[0])
-            surv_func = model.predict_survival_function(X)[0]
-
-            def _percentile(sf, p):
-                below = np.where(sf.y <= (1 - p))[0]
-                return float(sf.x[below[0]]) if len(below) > 0 else float(sf.x[-1])
-
-            p5 = _percentile(surv_func, 0.05)
-            p25 = _percentile(surv_func, 0.25)
-            median_survival = _percentile(surv_func, 0.50)
-            p75 = _percentile(surv_func, 0.75)
-            p95 = _percentile(surv_func, 0.95)
-
-            if median_survival < 300:
-                risk_group = "High Risk"
-            elif median_survival < 450:
-                risk_group = "Medium Risk"
-            else:
-                risk_group = "Low Risk"
-
-            return {
-                "median_days": median_survival,
-                "risk_group": risk_group,
-                "risk_score": risk_score,
-                "p5_days": p5,
-                "p25_days": p25,
-                "p75_days": p75,
-                "p95_days": p95,
-                "median_months": median_survival / 30.44,
-            }
+            return predict_survival(
+                flair_path, seg_data, affine, age, eor,
+                checkpoint_dir="/app/checkpoints/survival",
+            )
 
         return web_app

@@ -7,11 +7,7 @@ Usage:
     python src/segmentation/convert_data.py
 
 Then train with:
-    export nnUNet_raw="$(pwd)/nnunet/raw"
-    export nnUNet_preprocessed="$(pwd)/nnunet/preprocessed"
-    export nnUNet_results="$(pwd)/nnunet/results"
-    nnUNetv2_plan_and_preprocess -d 1 --verify_dataset_integrity
-    nnUNetv2_train 1 3d_fullres all -tr nnUNetTrainer_100epochs --npz
+    python src/segmentation/train.py
 """
 
 import json
