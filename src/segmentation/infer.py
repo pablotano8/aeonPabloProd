@@ -161,7 +161,7 @@ def infer(args):
 
     # Survival prediction (requires age)
     if args.age is not None:
-        predict_survival(args.input, seg_normal, affine, args.age, args.eor, args.output_dir)
+        predict_survival(args.input, seg_normal, affine, args.age, args.eor, output_dir=args.output_dir)
 
 
 
