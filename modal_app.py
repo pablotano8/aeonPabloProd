@@ -12,6 +12,8 @@ import modal
 
 app = modal.App("brain-tumor-playground")
 
+output_volume = modal.Volume.from_name("playground-output", create_if_missing=True)
+
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("libgl1-mesa-glx", "libglib2.0-0")
@@ -54,6 +56,7 @@ image = (
     gpu="T4",
     scaledown_window=3600,  # stay alive 1 hour after last request
     timeout=600,            # 10 min max per inference request
+    volumes={"/app/playground/output": output_volume},
 )
 class Playground:
     @modal.enter()
@@ -78,7 +81,6 @@ class Playground:
             use_folds=("all",),
             checkpoint_name="checkpoint_final.pth",
         )
-        os.makedirs("/app/playground/output", exist_ok=True)
         print("Model loaded!", flush=True)
 
     @modal.asgi_app()
@@ -96,6 +98,7 @@ class Playground:
         web_app = FastAPI()
         predictor = self.predictor
         OUTPUT_DIR = "/app/playground/output"
+        vol = output_volume
         HIGH_SENS_THRESHOLD = 0.001
 
         @web_app.get("/")
@@ -111,6 +114,7 @@ class Playground:
 
         @web_app.get("/output/{filename}")
         def output_file(filename: str):
+            vol.reload()  # pull latest committed writes from other containers
             path = f"{OUTPUT_DIR}/{filename}"
             if os.path.exists(path):
                 return FileResponse(path, media_type="application/octet-stream")
@@ -180,6 +184,7 @@ class Playground:
                 if age is not None:
                     survival = _predict_survival(upload_path, seg_normal, affine, age, eor)
 
+                vol.commit()  # flush writes so other containers can read the files
                 print(f"Inference complete. Tumor volume: {stats['tumor_volume_cm3']:.1f} cm³", flush=True)
 
                 return {
