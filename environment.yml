@@ -24,7 +24,8 @@ dependencies:
     - tensorboard
     - einops
     - pyyaml
-    - gdown
+    - requests
     - lifelines
     - scikit-survival
     - nnunetv2
+    - modal

@@ -1,4 +1,4 @@
-# Brain Tumor Analysis from FLAIR MRI
+# Brain Tumor Segmentation and Survival from FLAIR MRI
 
 Automated brain tumor segmentation and survival prediction from single-modality FLAIR MRI scans.
 
@@ -14,10 +14,11 @@ python playground/server.py
 
 ```
 
-Upload a FLAIR NIfTI scan, enter patient age and extent of resection, and get:
-- Tumor segmentation with adjustable sensitivity
+Upload a FLAIR .nii scan, enter patient age and extent of resection, and get:
+- Tumor segmentation
 - Uncertainty map
-- Survival prediction with risk group and prediction interval
+- High-sensitivity map
+- Survival prediction interval
 
 ## Segmentation Performance
 
@@ -35,16 +36,16 @@ Evaluated on 74 held-out validation subjects.
 
 | Metric | Value |
 |--------|-------|
-| C-index (nested 5-fold CV x 5 seeds) | 0.6722 ± 0.0324 |
-| C-index (leave-one-out CV, N=236) | 0.6711 |
+| C-index (nested 5-fold CV x 5 seeds) | 0.67 ± 0.03 |
+| C-index (leave-one-out CV, N=236) | 0.67 ± 0.03|
 | MAE (leave-one-out CV) | 235 days |
 
-When using predicted segmentation from nnU-Net (as in the playground) instead of ground-truth masks, C-index drops by ~0.015. The gap is driven by `tumor_min` (GT-vs-predicted correlation: 0.48) — boundary differences change the minimum intensity within the tumor region. Other features are highly correlated (dist_from_center: 0.99, tumor_intensity_ratio: 0.97).
+These values correspond to using predicted segmentation from nnU-Net (as in the playground). When using ground-truth masks, C-index increases by ~0.015. The gap is driven by the `tumor_min` feature (GT-vs-predicted correlation: 0.48). Other features are highly correlated (dist_from_center: 0.99, tumor_intensity_ratio: 0.97).
 
 ## Project Structure
 
 ```
-├── checkpoints/               # Local model artifacts (gitignored, not committed)
+├── checkpoints/               # Local model artifacts (gitignored)
 │   ├── segmentation/          # nnU-Net model exported after training
 │   │   ├── fold_all/checkpoint_final.pth
 │   │   ├── dataset.json
@@ -54,16 +55,19 @@ When using predicted segmentation from nnU-Net (as in the playground) instead of
 │       ├── coxph_model.pkl
 │       └── scaler.pkl
 ├── src/
+│   ├── checkpoint_bootstrap.py    # Auto-download checkpoints if missing
+│   ├── checkpoint_source.py       # Checkpoint archive URL
 │   ├── segmentation/
-│   │   ├── train.py           # Train nnU-Net (wraps CLI pipeline)
-│   │   ├── evaluate.py        # Evaluate on validation set
-│   │   ├── infer.py           # Single-scan inference + survival
-│   │   ├── predict.py         # Batch prediction for a split
-│   │   └── convert_data.py    # Convert data to nnU-Net format
+│   │   ├── train.py               # Train nnU-Net (wraps CLI pipeline)
+│   │   ├── evaluate.py            # Evaluate on validation set
+│   │   ├── infer.py               # Single-scan inference
+│   │   ├── predict.py             # Batch prediction for a split
+│   │   └── convert_data.py        # Convert data to nnU-Net format
 │   └── survival/
-│       ├── features.py        # Radiomics feature extraction
-│       ├── train_cox.py       # Train CoxPH (production)
-│       └── evaluate.py        # Survival model evaluation
+│       ├── predict.py             # Survival inference (CoxPH prediction)
+│       ├── features.py            # Radiomics feature extraction
+│       ├── train_cox.py           # Train CoxPH (production)
+│       └── evaluate.py            # Survival model evaluation
 ├── playground/
 │   ├── server.py              # Local web server
 │   └── index.html             # NiiVue-based viewer
@@ -76,7 +80,9 @@ When using predicted segmentation from nnU-Net (as in the playground) instead of
 
 ### Architecture
 
-**nnU-Net v2** (3d_fullres) — a self-configuring 3D segmentation framework.
+**nnU-Net v2** (3d_fullres): self-configuring 3D segmentation framework.
+
+The auto-configuration chosen by nn-Unet pipeline appears in `checkpoints/segmentation/plans.json`, after running the segementaiton training pipeline locally (`src/segmentation/train.py`) or after auto-downloading checkpoints when running the playground. This configuration is based on the structure of the training data, auto-parsed in `checkpoints/segmentation/dataset_fingerprint.json`. For our dataset, some aspects of the configuration are:
 
 - PlainConvUNet, 6 stages, features [32, 64, 128, 256, 320, 320]
 - InstanceNorm3d, Dice + CrossEntropy loss with deep supervision
@@ -183,7 +189,7 @@ PYTHONPATH=src/survival python src/survival/evaluate.py \
 ### Limitations
 
 - **Age dominates**: all five imaging features combined contribute only +0.05 C-index.
-- **No molecular markers**: MGMT methylation and IDH mutation are stronger prognostic factors but unavailable from imaging.
+- **No molecular markers**: they are stronger prognostic factors but unavailable from imaging.
 - **Single modality**: using only FLAIR; T1ce and T2 could provide additional signal.
 - **Small dataset**: N=236 limits model complexity.
 
@@ -205,8 +211,8 @@ data/
 ## Requirements
 
 - Python 3.11+
-- PyTorch 2.x with CUDA
-- nnU-Net v2 (`pip install nnunetv2`)
+- PyTorch 2.x with CUDA (for training)
+- nnU-Net v2
 - MONAI, scikit-survival, lifelines, nibabel, scipy
 
 ```bash

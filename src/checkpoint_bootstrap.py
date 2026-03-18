@@ -62,6 +62,42 @@ def _extract_archive(archive_path: Path) -> None:
         zf.extractall(REPO_ROOT)
 
 
+def _download_with_progress(url: str, dest: Path, verbose: bool = True) -> None:
+    """Download a Google Drive file with a tqdm progress bar."""
+    import re
+    import requests
+    from tqdm import tqdm
+
+    # Extract file ID from Drive share URL
+    m = re.search(r"/d/([a-zA-Z0-9_-]+)", url)
+    if not m:
+        raise ValueError(f"Cannot parse Google Drive file ID from URL: {url}")
+    file_id = m.group(1)
+
+    # Use the usercontent domain with confirm=t to bypass the virus-scan page
+    download_url = (
+        f"https://drive.usercontent.google.com/download"
+        f"?id={file_id}&export=download&confirm=t"
+    )
+
+    session = requests.Session()
+    response = session.get(download_url, stream=True)
+    response.raise_for_status()
+
+    total = int(response.headers.get("content-length", 0))
+    with open(dest, "wb") as f, tqdm(
+        total=total,
+        unit="B",
+        unit_scale=True,
+        unit_divisor=1024,
+        desc="checkpoints.zip",
+        disable=not verbose,
+    ) as bar:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            f.write(chunk)
+            bar.update(len(chunk))
+
+
 def ensure_checkpoints(force: bool = False, verbose: bool = True) -> None:
     if checkpoints_present() and not force:
         if verbose:
@@ -92,15 +128,8 @@ def ensure_checkpoints(force: bool = False, verbose: bool = True) -> None:
         if DOWNLOAD_PATH.exists():
             DOWNLOAD_PATH.unlink()
 
-        import gdown
-
-        downloaded = gdown.download(
-            url=CHECKPOINT_ARCHIVE_URL,
-            output=str(DOWNLOAD_PATH),
-            quiet=not verbose,
-            fuzzy=True,
-        )
-        if not downloaded or not DOWNLOAD_PATH.exists():
+        _download_with_progress(CHECKPOINT_ARCHIVE_URL, DOWNLOAD_PATH, verbose=verbose)
+        if not DOWNLOAD_PATH.exists():
             raise RuntimeError("Checkpoint download failed.")
 
         if verbose:
